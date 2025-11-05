@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Docentes líderes · Registro QR · Musicala</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <!-- Librería de escaneo (html5-qrcode) -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+  <main class="container">
+    <!-- Header / Branding -->
+    <header class="topbar">
+      <img src="./logo.png" alt="Musicala" class="logo" />
+      <div class="brand">
+        <h1>Registro QR · Docentes</h1>
+        <p class="subtitle">Escanea para registrar tu <strong>llegada</strong> o <strong>salida</strong>.</p>
+      </div>
+    </header>
+
+    <!-- Tarjeta principal: controles + lector + resultado -->
+    <section class="card">
+      <div class="grid controls">
+        <div class="field">
+          <label for="practicanteSelect">Docente líder</label>
+          <select id="practicanteSelect"></select>
+        </div>
+
+        <div class="field">
+          <label for="cameraSelect">Cámara</label>
+          <select id="cameraSelect"></select>
+        </div>
+
+        <div class="field actions">
+          <button id="btnStart" class="btn primary">Iniciar cámara</button>
+          <button id="btnStop" class="btn ghost" disabled>Detener</button>
+        </div>
+      </div>
+
+      <!-- Lector -->
+      <div id="reader" class="reader"></div>
+
+      <!-- Resultado -->
+      <div class="panel">
+        <h2>Último resultado</h2>
+        <div id="result" class="result">Aún sin leer…</div>
+        <p class="note">Tip: asegúrate de tener internet activo para que el registro se guarde.</p>
+      </div>
+    </section>
+
+    <!-- Resumen local de hoy (NECESARIO para app.js) -->
+    <section class="card">
+      <h2>Resumen local de hoy</h2>
+      <div id="summary"></div>
+    </section>
+
+    <footer class="footnote">
+      El QR puede contener “ADM-INGRESO” o “ADM-SALIDA”. El sistema toma la <strong>hora del escaneo</strong> automáticamente.
+    </footer>
+  </main>
+
+  <!-- Tu lógica -->
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
