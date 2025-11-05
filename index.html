@@ -29,7 +29,12 @@
 
         <div class="field">
           <label for="cameraSelect">Cámara</label>
-          <select id="cameraSelect"></select>
+          <div class="inline">
+            <select id="cameraSelect"></select>
+            <button id="btnPerms" class="btn ghost" title="Pedir permisos y refrescar cámaras">Permitir/Actualizar</button>
+            <button id="btnFlip" class="btn ghost" title="Cambiar entre cámaras">Voltear</button>
+          </div>
+          <small class="hint">Si solo ves la frontal, toca “Permitir/Actualizar” y acepta acceso a la cámara. En celular, el sitio debe estar en <strong>HTTPS</strong>.</small>
         </div>
 
         <div class="field actions">
@@ -49,7 +54,7 @@
       </div>
     </section>
 
-    <!-- Resumen local de hoy (NECESARIO para app.js) -->
+    <!-- Resumen local de hoy -->
     <section class="card">
       <h2>Resumen local de hoy</h2>
       <div id="summary"></div>
@@ -60,7 +65,6 @@
     </footer>
   </main>
 
-  <!-- Tu lógica -->
   <script type="module" src="./app.js"></script>
 </body>
 </html>
