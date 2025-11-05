@@ -1,7 +1,6 @@
 // ====== Config ======
-const GAS_URL = "https://script.google.com/macros/s/AKfycbwwz9QoOUlGwHaAYp1uHePJOtp3hwySrADWTm8qQbZZwBE65rJo0_T7rDXvLFLR9VmZ/exec"; // <- reemplaza con tu /exec del Web App
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwwz9QoOUlGwHaAYp1uHePJOtp3hwySrADWTm8qQbZZwBE65rJo0_T7rDXvLFLR9VmZ/exec"; // <- pega tu /exec
 
-// Docentes líderes (puedes sincronizarlos desde GAS con mode=meta si quieres)
 const DOCENTES = [
   "Angie Natalia Nitola",
   "Emily Bejarano",
@@ -13,16 +12,18 @@ const LS_KEY = "docentes.qr.v1"; // { name, cameraId, history: {YYYY-MM-DD:{ingr
 
 let html5QrCode = null;
 let currentCameraId = null;
-let SUBMIT_LOCK = false; // <- evita doble escaneo mientras registra
+let SUBMIT_LOCK = false;
 
-// ====== Helpers ======
+// ====== Helpers / DOM ======
 const $ = (sel, ctx=document) => ctx.querySelector(sel);
 const $reader = $("#reader");
 const $cameraSelect = $("#cameraSelect");
-const $docente = $("#practicanteSelect"); // reutilizamos el mismo id del select
+const $docente = $("#practicanteSelect");
 const $result = $("#result");
 const $btnStart = $("#btnStart");
 const $btnStop = $("#btnStop");
+const $btnPerms = $("#btnPerms");
+const $btnFlip = $("#btnFlip");
 const $summary = $("#summary");
 
 const loadState = () => {
@@ -47,7 +48,6 @@ function insecureContextMsg() {
     : "";
 }
 
-// ====== UI Setup ======
 function populateDocentes(){
   $docente.innerHTML = "";
   DOCENTES.forEach(n => {
@@ -63,35 +63,60 @@ function pickBestCameraId(devices) {
   return (rear && rear.id) || devices[0].id;
 }
 
-async function loadCameras() {
+// Usa html5-qrcode si está disponible; si falla, cae a enumerateDevices()
+async function listVideoInputs() {
   try {
-    const devices = await Html5Qrcode.getCameras();
-    $cameraSelect.innerHTML = "";
-    if (!devices || !devices.length) {
-      const msg = insecureContextMsg() || "No se detectaron cámaras. Revisa permisos del navegador.";
-      $result.textContent = `⚠️ ${msg}`;
-      return;
-    }
+    const cams = await Html5Qrcode.getCameras();
+    // Normalizamos a {id,label}
+    return cams.map(c => ({ id: c.id || c.deviceId, label: c.label }));
+  } catch {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter(d => d.kind === "videoinput")
+      .map(d => ({ id: d.deviceId, label: d.label || "Cámara" }));
+  }
+}
 
-    currentCameraId = pickBestCameraId(devices);
-
-    devices.forEach((d, i) => {
-      const opt = document.createElement("option");
-      opt.value = d.id;
-      opt.textContent = d.label || `Cámara ${i+1}`;
-      $cameraSelect.appendChild(opt);
-    });
-    if (currentCameraId) $cameraSelect.value = currentCameraId;
-
-    const st = loadState();
-    if (st.cameraId && devices.some(d => d.id === st.cameraId)) {
-      currentCameraId = st.cameraId;
-      $cameraSelect.value = st.cameraId;
-    }
-  } catch (e) {
-    console.error(e);
-    const msg = insecureContextMsg() || "Error listando cámaras. Revisa permisos del navegador.";
+async function populateCameras() {
+  const devices = await listVideoInputs();
+  $cameraSelect.innerHTML = "";
+  if (!devices || !devices.length) {
+    const msg = insecureContextMsg() || "No se detectaron cámaras. Revisa permisos del navegador.";
     $result.textContent = `⚠️ ${msg}`;
+    return;
+  }
+
+  // reconstruir select
+  devices.forEach((d, i) => {
+    const opt = document.createElement("option");
+    opt.value = d.id;
+    opt.textContent = d.label || `Cámara ${i+1}`;
+    $cameraSelect.appendChild(opt);
+  });
+
+  // lógica de selección
+  const st = loadState();
+  const remembered = st.cameraId && devices.find(d => d.id === st.cameraId);
+  if (remembered) {
+    currentCameraId = remembered.id;
+  } else {
+    currentCameraId = pickBestCameraId(devices);
+  }
+  if (currentCameraId) $cameraSelect.value = currentCameraId;
+}
+
+async function requestPermissionsAndRefresh() {
+  try {
+    // Pedimos permiso explícito para que los device labels aparezcan y se activen cámaras traseras
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    // Cerramos inmediatamente
+    stream.getTracks().forEach(t => t.stop());
+  } catch (e) {
+    console.warn("No se pudo abrir la cámara para permisos:", e);
+    const msg = insecureContextMsg() || "Concede permiso a la cámara en el navegador.";
+    $result.textContent = `⚠️ ${msg}`;
+  } finally {
+    await populateCameras();
   }
 }
 
@@ -109,10 +134,32 @@ $docente.addEventListener("change", () => {
   renderSummary();
 });
 
+$btnPerms.addEventListener("click", requestPermissionsAndRefresh);
+
+$btnFlip.addEventListener("click", async () => {
+  // Si hay varias, alterna al siguiente índice
+  const options = Array.from($cameraSelect.options).map(o => o.value);
+  if (options.length < 2) {
+    // Si no hay varias, intenta alternar por facingMode
+    $result.textContent = "No hay más cámaras detectadas para alternar.";
+    return;
+  }
+  const idx = options.indexOf(currentCameraId);
+  const nextId = options[(idx + 1) % options.length];
+  $cameraSelect.value = nextId;
+  currentCameraId = nextId;
+  const st = loadState(); st.cameraId = nextId; saveState(st);
+  // Si está en marcha, reinicia con la nueva cámara
+  if (html5QrCode && html5QrCode.isScanning) {
+    await stop();
+    await start();
+  }
+});
+
 // ====== Escaneo ======
 async function start() {
   try {
-    if (!currentCameraId) await loadCameras();
+    if (!currentCameraId) await populateCameras();
     if (html5QrCode) await html5QrCode.stop().catch(()=>{});
     html5QrCode = new Html5Qrcode("reader");
 
@@ -159,16 +206,12 @@ $btnStart.addEventListener("click", start);
 $btnStop.addEventListener("click", stop);
 
 async function onScanSuccess(decodedText) {
-  // Evita dobles lecturas mientras enviamos
   if (SUBMIT_LOCK) return;
   SUBMIT_LOCK = true;
 
   try {
     if (navigator.vibrate) navigator.vibrate(20);
-    // Pausar la cámara mientras registramos (evita múltiples onScanSuccess)
-    if (html5QrCode && html5QrCode.pause) {
-      html5QrCode.pause(true); // congela frame
-    }
+    if (html5QrCode && html5QrCode.pause) html5QrCode.pause(true);
 
     const name = $docente.value || DOCENTES[0];
     const now = new Date();
@@ -177,7 +220,6 @@ async function onScanSuccess(decodedText) {
 
     $result.textContent = `Leyó: “${decodedText}” — ${dateISO} ${timeHHMM} — Enviando…`;
 
-    // Enviar como text/plain para evitar preflight CORS
     const res = await fetch(GAS_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -187,33 +229,23 @@ async function onScanSuccess(decodedText) {
           date: dateISO,
           name,
           stamp: now.toISOString(),
-          raw: decodedText // ADM-INGRESO / ADM-SALIDA
+          raw: decodedText
         }
       })
     });
 
     const rawText = await res.text().catch(()=>"(sin cuerpo)");
-    if (!res.ok) {
-      $result.textContent = `❌ HTTP ${res.status} – ${rawText}`;
-      return;
-    }
+    if (!res.ok) { $result.textContent = `❌ HTTP ${res.status} – ${rawText}`; return; }
 
     let data;
     try { data = JSON.parse(rawText); }
-    catch {
-      $result.textContent = `❌ Respuesta no JSON del servidor: ${rawText}`;
-      return;
-    }
+    catch { $result.textContent = `❌ Respuesta no JSON: ${rawText}`; return; }
 
-    if (!data.ok) {
-      $result.textContent = `❌ GAS dijo: ${data.error || "Error desconocido"}`;
-      return;
-    }
+    if (!data.ok) { $result.textContent = `❌ GAS dijo: ${data.error || "Error desconocido"}`; return; }
 
     const tipo = data.type === "salida" ? "Salida" : "Ingreso";
     $result.textContent = `✔️ ${name} — ${tipo} registrado: ${dateISO} ${timeHHMM}`;
 
-    // Guardar historial local del día (solo visual)
     const st = loadState();
     st.history = st.history || {};
     st.history[dateISO] = st.history[dateISO] || {};
@@ -226,15 +258,10 @@ async function onScanSuccess(decodedText) {
     console.error(err);
     $result.textContent = `❌ Fetch falló (¿CORS o red?): ${String(err)}`;
   } finally {
-    // Reanudar cámara y liberar lock después de un pequeño respiro
     setTimeout(async () => {
-      try {
-        if (html5QrCode && html5QrCode.isScanning) {
-          if (html5QrCode.resume) html5QrCode.resume();
-        }
-      } catch(e){ console.warn("No se pudo reanudar:", e); }
+      try { if (html5QrCode && html5QrCode.isScanning && html5QrCode.resume) html5QrCode.resume(); } catch(e){}
       SUBMIT_LOCK = false;
-    }, 600); // 0.6s para evitar rebotes por el mismo QR
+    }, 600);
   }
 }
 
@@ -260,7 +287,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (st.cameraId) currentCameraId = st.cameraId;
 
   try {
-    await loadCameras();
+    await populateCameras();
   } catch(e) {
     console.error(e);
     const msg = insecureContextMsg() || "Error listando cámaras. Revisa permisos del navegador.";
